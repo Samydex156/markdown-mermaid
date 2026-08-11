@@ -50,6 +50,7 @@ Guías y notas de desarrollo en [`docs/`](docs/readme.md):
 - [Arquitectura](docs/arquitectura.md) — procesos, flujos de datos y seguridad.
 - [Cronología](docs/cronologia.md) — cronología del desarrollo.
 - [Prompt](docs/prompt.md) — prompt de desarrollo original.
+- [Guía de Release](docs/guia-release.md) — del repositorio al instalador disponible en GitHub.
 
 ## Licencia
 

@@ -116,6 +116,7 @@ Más detalle en `docs/`:
 - [Contexto del proyecto](contexto.md)
 - [Cronología de desarrollo](cronologia.md)
 - [Arquitectura](arquitectura.md)
+- [Guía de Release](guia-release.md) — del repositorio al instalador en GitHub
 
 ## Limitaciones conocidas
 
