@@ -1,0 +1,39 @@
+{
+  "name": "markdown-mermaid",
+  "productName": "Markdown Mermaid",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "description": "Editor y visualizador de Markdown con diagramas Mermaid para Windows.",
+  "author": "Markdown Mermaid",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "build:win": "electron-vite build && electron-builder --win",
+    "icon": "node scripts/generate-icon.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.8",
+    "docx": "^9.7.1",
+    "dompurify": "^3.4.13",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^15.0.0",
+    "mermaid": "^11.16.1",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.3",
+    "vite": "^7.3.6",
+    "vue": "^3.5.40"
+  },
+  "allowScripts": {
+    "sharp@0.34.5": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

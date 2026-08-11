@@ -1,0 +1,32 @@
+appId: com.markdownmermaid.app
+productName: Markdown Mermaid
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - "!**/.vscode/*"
+  - "!src/*"
+  - "!docs/*"
+  - "!scripts/*"
+  - "!electron.vite.config.js"
+asar: true
+win:
+  target:
+    - nsis
+  icon: build/icon.ico
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+fileAssociations:
+  - ext:
+      - md
+      - markdown
+      - mdx
+    name: Markdown
+    description: Documento Markdown
+    mimeType: text/markdown
+    role: Editor
