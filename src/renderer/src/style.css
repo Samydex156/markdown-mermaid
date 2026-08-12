@@ -52,6 +52,11 @@ body {
   max-width: 880px;
 }
 
+/* In full preview mode the content fills the whole window width. */
+.mode-preview .markdown-body {
+  max-width: none;
+}
+
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3,

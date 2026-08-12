@@ -66,6 +66,7 @@ async function onDrop(event) {
   line-height: 1.6;
   color: var(--text);
   background: transparent;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 </style>

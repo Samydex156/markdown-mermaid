@@ -11,7 +11,7 @@ Aplicación de **escritorio para Windows** construida con Electron, con tres pro
 └───────────────▲───────────────────────────────┬───────────────────────────────────┘
                 │ ipcMain (handle/on)           │ webContents.send (eventos)
 ┌───────────────┴────────────┐   ┌───────────────▼───────────────────────────────────┐
-│  src/preload/index.mjs     │   │              Renderer (Chromium + Vue)             │
+│  src/preload/index.js       │   │              Renderer (Chromium + Vue)             │
 │  contextBridge · webUtils  │──▶│  src/renderer/ → App.vue · MarkdownInput.vue      │
 │  expone window.electronAPI │   │  MarkdownViewer.vue · lib/ (markdown, mermaid,    │
 └────────────────────────────┘   │  diagramDownload, markdownToDocx, examples)        │
@@ -80,8 +80,10 @@ vue-mermaid-viewer-electron/
 
 ### Descargas (Word, SVG, PNG)
 
-- Los módulos de renderer disparan descargas con `downloadBlob` (un `<a download>` con `blob:`).
-- Electron las captura con `session.on('will-download')` → `dialog.showSaveDialog` + `item.setSavePath`. Si el usuario cancela, `item.cancel()`.
+- Los módulos de renderer generan el blob y lo envían al proceso principal con `downloadBlob` (`lib/diagramDownload.js`), que delega en `electronAPI.saveFileWithDialog` (IPC `file:save-blob`).
+- El main muestra **un único** `dialog.showSaveDialog` nativo y escribe el archivo con `writeFile`; si el usuario cancela, devuelve `{ ok: false }` y no escribe nada.
+- En un entorno sin `electronAPI` (navegador) `downloadBlob` cae en el `<a download>` con `blob:`.
+- Este diseño sustituye al antiguo `session.on('will-download')`, que abría la ventana de guardado **dos veces** (la de la app y la propia de Electron) porque el `setSavePath` se aplicaba de forma asíncrona.
 
 ### Cierre con cambios sin guardar
 
@@ -101,7 +103,7 @@ vue-mermaid-viewer-electron/
 | CSP en `index.html`                   | `script-src 'self'`, `style-src 'self' 'unsafe-inline'`, `img-src` con `data:/blob:`; bloquea eval y fuentes externas. |
 | Instancia única + `second-instance`   | Doble clic en `.md` reutiliza la ventana abierta (reemplaza archivo).|
 | `file:save` + `lastSavedAt`           | Suprime eventos del watcher provocados por el propio guardado.      |
-| `will-download` → `showSaveDialog`    | Guarda Word/SVG/PNG en la ruta elegida sin tocar `diagramDownload.js`.|
+| IPC `file:save-blob` (renderer → main) | Un único diálogo nativo por descarga; el main escribe el archivo (evita el doble diálogo de `will-download`). |
 | NSIS `perMachine: true`               | Permite que electron-builder registre `fileAssociations` de forma fiable en Windows. |
 | Renderer deps en `devDependencies`    | Se bundlean en `out/renderer`; el asar queda sin `node_modules` (instalador ligero). |
 
@@ -119,6 +121,8 @@ vue-mermaid-viewer-electron/
 - Módulos **ESM** (`"type": "module"`) en main y preload. Electron requiere extensión `.mjs` en el preload ESM (el main lo referencia como `../preload/index.mjs`).
 - `electron-vite` emite `out/main/index.js`, `out/preload/index.mjs` y `out/renderer/`.
 - `electron-builder` empaqueta solo `out/**` (ver `files` en `electron-builder.yml`).
+- Ventana por defecto de **915×550** (mínima 720×480); la app arranca en **modo Vista** (`mode: 'preview'`, configurable con el toggle Editor/Split/Vista).
+- El editor usa `white-space: pre-wrap` (el texto se ajusta al ancho del panel) y el modo Vista ocupa todo el ancho de la ventana (`max-width: none`).
 
 ## Posibles evoluciones
 

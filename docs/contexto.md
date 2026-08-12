@@ -2,7 +2,7 @@
 
 ## ¿Qué es?
 
-**Markdown Mermaid** es una aplicación de **escritorio para Windows** construida con **Electron** que permite abrir, editar y visualizar documentos **Markdown** con soporte nativo para diagramas **Mermaid**. Al hacer **doble clic** sobre un archivo `.md`, `.markdown` o `.mdx` en el explorador, la aplicación se abre con el documento cargado en modo **split** (editor + vista renderizada), con guardado directo sobre el mismo archivo.
+**Markdown Mermaid** es una aplicación de **escritorio para Windows** construida con **Electron** que permite abrir, editar y visualizar documentos **Markdown** con soporte nativo para diagramas **Mermaid**. Al hacer **doble clic** sobre un archivo `.md`, `.markdown` o `.mdx` en el explorador, la aplicación se abre con el documento cargado en **modo Vista** (con toggle a **Split** y **Editor**), con guardado directo sobre el mismo archivo.
 
 Es la evolución de escritorio del proyecto web `vue-mermaid-viewer-js` (Vue 3 + Vite), del que reutiliza toda la lógica de render de Markdown/Mermaid y exportación a Word.
 
@@ -19,7 +19,7 @@ Los documentos Markdown suelen incluir diagramas Mermaid (diagramas de flujo, se
 
 - Apertura de archivos `.md` / `.markdown` / `.mdx` por **doble clic** en el explorador (asociación de archivos registrada por el instalador NSIS).
 - Instancia única: al abrir un segundo archivo se reemplaza el documento actual en la ventana ya abierta (con confirmación si hay cambios sin guardar).
-- Editor + vista previa en modo **Editor**, **Split** y **Vista previa**, con actualización en tiempo real (debounce de 300 ms).
+- Editor + vista previa en modo **Editor**, **Split** y **Vista previa** (abre en **Vista** por defecto), con actualización en tiempo real (debounce de 300 ms).
 - Markdown con sintaxis extendida: tablas, listas, citas, links automáticos (markdown-it).
 - Resaltado de sintaxis en bloques de código con **highlight.js**.
 - Diagramas **Mermaid v11** renderizados a SVG (flowchart, sequence, class, gantt, pie y más).
@@ -53,4 +53,4 @@ Desarrolladores y personas técnicas que trabajan con documentación Markdown co
 
 ## Estado
 
-Aplicación funcional en su primera versión para Windows (x64). `npm run build` y `npm run build:win` terminan en verde; se generó el instalador NSIS `dist\Markdown Mermaid Setup 0.1.0.exe` con asociación de `.md`, `.markdown` y `.mdx`. La apertura por doble clic se activa al **instalar** la aplicación (la asociación se registra en el registro de Windows durante la instalación).
+Aplicación funcional en su primera versión para Windows (x64). `npm run build` y `npm run build:win` terminan en verde; se generó el instalador NSIS `dist\Markdown Mermaid Setup 0.2.0.exe` con asociación de `.md`, `.markdown` y `.mdx`. La apertura por doble clic se activa al **instalar** la aplicación (la asociación se registra en el registro de Windows durante la instalación).

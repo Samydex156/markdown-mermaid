@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, session } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { watch } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
@@ -27,8 +27,8 @@ function filePathFromArgv(argv = process.argv) {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: 915,
+    height: 550,
     minWidth: 720,
     minHeight: 480,
     show: false,
@@ -173,6 +173,21 @@ function registerIpc() {
     return { ok: true, canceled: false, path: result.filePath }
   })
 
+  ipcMain.handle('file:save-blob', async (_event, filename, data) => {
+    const ext = extname(filename).replace('.', '')
+    const filters = ext
+      ? [{ name: 'Documento', extensions: [ext] }]
+      : [{ name: 'Todos los archivos', extensions: ['*'] }]
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Guardar archivo',
+      defaultPath: join(app.getPath('downloads'), filename),
+      filters,
+    })
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true, path: null }
+    await writeFile(result.filePath, Buffer.from(data))
+    return { ok: true, canceled: false, path: result.filePath }
+  })
+
   ipcMain.on('app:set-watch', (_event, path) => setWatchTarget(path || null))
 
   ipcMain.handle('app:get-initial-file', () => filePathFromArgv(process.argv))
@@ -210,29 +225,6 @@ function registerIpc() {
       detail,
     })
     return result.response === 0
-  })
-}
-
-function registerDownloads() {
-  session.defaultSession.on('will-download', (event, item, _wc) => {
-    const suggested = item.getFilename()
-    const ext = extname(suggested).replace('.', '')
-    const filters = ext
-      ? [{ name: 'Documento', extensions: [ext] }]
-      : [{ name: 'Todos los archivos', extensions: ['*'] }]
-    dialog
-      .showSaveDialog(win, {
-        title: 'Guardar archivo',
-        defaultPath: join(app.getPath('downloads'), suggested),
-        filters,
-      })
-      .then(({ canceled, filePath }) => {
-        if (canceled) {
-          item.cancel()
-        } else if (filePath) {
-          item.setSavePath(filePath)
-        }
-      })
   })
 }
 
@@ -293,7 +285,6 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     registerIpc()
-    registerDownloads()
     buildMenu()
     createWindow()
 

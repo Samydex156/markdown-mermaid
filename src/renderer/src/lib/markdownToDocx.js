@@ -278,35 +278,51 @@ export async function buildDocxChildren(source) {
       case 'heading_open': {
         const level = Math.min(Number(tok.tag.slice(1)) || 1, 6)
         const heading = HeadingLevel[`HEADING_${level}`]
-        const content = inlineChildren(tokens, i + 1, tokens.findIndex((t, j) => j > i && t.type === 'heading_close'))
+        const closeIdx = tokens.findIndex((t, j) => j > i && t.type === 'heading_close')
+        const content = inlineChildren(tokens, i + 1, closeIdx)
         children.push(
           new Paragraph({
             heading,
             children: content.length ? inlineRuns(content) : [new TextRun('')],
           }),
         )
+        i = closeIdx === -1 ? i : closeIdx
         break
       }
       case 'paragraph_open': {
-        const content = inlineChildren(tokens, i + 1, tokens.findIndex((t, j) => j > i && t.type === 'paragraph_close'))
+        const closeIdx = tokens.findIndex((t, j) => j > i && t.type === 'paragraph_close')
+        const content = inlineChildren(tokens, i + 1, closeIdx)
         children.push(
           new Paragraph({
             children: content.length ? inlineRuns(content) : [new TextRun('')],
           }),
         )
+        i = closeIdx === -1 ? i : closeIdx
         break
       }
       case 'bullet_list_open':
       case 'ordered_list_open': {
         const ordered = tok.type === 'ordered_list_open'
-        const close = tokens.findIndex((t, j) => j > i && t.type === `${tok.type.replace('_open', '')}_close`)
+        let depth = 0
+        let close = -1
+        for (let j = i; j < tokens.length; j++) {
+          if (tokens[j].type === 'bullet_list_open' || tokens[j].type === 'ordered_list_open') depth++
+          else if (tokens[j].type === 'bullet_list_close' || tokens[j].type === 'ordered_list_close') {
+            depth--
+            if (depth === 0) {
+              close = j
+              break
+            }
+          }
+        }
         const end = close === -1 ? tokens.length : close
         children.push(...listParagraphs(tokens, i + 1, end, ordered, 0))
         i = end
         break
       }
       case 'blockquote_open': {
-        const content = inlineChildren(tokens, i + 1, tokens.findIndex((t, j) => j > i && t.type === 'blockquote_close'))
+        const closeIdx = tokens.findIndex((t, j) => j > i && t.type === 'blockquote_close')
+        const content = inlineChildren(tokens, i + 1, closeIdx)
         children.push(
           new Paragraph({
             children: content.length ? inlineRuns(content) : [new TextRun('')],
@@ -314,6 +330,7 @@ export async function buildDocxChildren(source) {
             style: 'IntenseQuote',
           }),
         )
+        i = closeIdx === -1 ? i : closeIdx
         break
       }
       case 'table_open': {

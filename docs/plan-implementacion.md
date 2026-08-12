@@ -65,15 +65,16 @@ vue-mermaid-viewer-electron/
 - **Instancia única**: `app.requestSingleInstanceLock()`; el evento `second-instance` captura `argv` y reenvía la ruta `.md` a la ventana abierta (comportamiento: reemplazar el archivo actual, pidiendo confirmación si hay cambios sin guardar).
 - **Parseo de argv**: al arrancar, busca el primer argumento con extensión `.md|markdown|mdx`.
 - **IPC** (`ipcMain.handle` / `ipcMain.on`):
-  - `open-file-dialog` → diálogo nativo + lectura.
-  - `open-file(path)` → `fs.readFile`, devuelve `{ path, content, name }`.
-  - `save-file(path, content)` → `fs.writeFile`.
-  - `save-file-as(content, suggested)` → `dialog.showSaveDialog` + escritura.
-  - `get-initial-file` → ruta desde argv.
+  - `dialog:open-file` → diálogo nativo + lectura.
+  - `file:open(path)` → `fs.readFile`, devuelve `{ path, content, name }`.
+  - `file:save(path, content)` → `fs.writeFile`.
+  - `file:save-as(content, suggested)` → `dialog.showSaveDialog` + escritura.
+  - `file:save-blob(filename, data)` → `dialog.showSaveDialog` + escritura del blob (Word/SVG/PNG).
+  - `app:get-initial-file` → ruta desde argv.
   - `set-title` → actualiza título de ventana.
   - `set-dirty` → marca la ventana como modificada para confirmar el cierre (`win.on('close')` + `dialog.showMessageBox`).
 - **Watcher** `fs.watch` sobre el archivo abierto → evento `file:changed` al renderer. Ignora cambios disparados por el propio guardado (flag + comparación de mtime) para evitar bucles.
-- **Descargas**: intercepta `session.on('will-download')` → `dialog.showSaveDialog` + `item.setSavePath`. Cubre exportación Word, SVG y PNG sin tocar `diagramDownload.js`.
+- **Descargas**: IPC `file:save-blob` — el renderer envía el blob (`downloadBlob` → `electronAPI.saveFileWithDialog`) y el main muestra un único `dialog.showSaveDialog` y escribe el archivo. Cubre exportación Word, SVG y PNG (un solo diálogo por descarga).
 - **Menú nativo** (Archivo/Editar/Vista/Ventana/Ayuda) con aceleradores Ctrl+O/N/S/Shift+S y los clásicos de Edición (imprescindibles en Windows para el textarea). Menú contextual en el editor.
 
 ### 2. Preload (`src/preload/index.js`)
@@ -139,4 +140,12 @@ Se elimina `vite.config.js` (la configuración del renderer vive en `electron.vi
 - `npm run build` compila main + preload + renderer sin errores.
 - Ejecutable empaquetado (`dist\Markdown Mermaid.exe`) abre el archivo `.md` recibido como argumento y renderiza los diagramas Mermaid (5 del ejemplo + los del archivo abierto), sin errores de preload ni de consola.
 - Instalador NSIS generado en `dist\Markdown Mermaid Setup 0.1.0.exe` (perMachine, asociación de `.md`/`.markdown`/`.mdx`).
+
+## Correcciones posteriores (0.1.x)
+
+- **Descargas sin doble diálogo**: se sustituyó la interceptación `will-download` por el IPC `file:save-blob` (el main muestra un único diálogo y escribe el archivo). Elimina el doble diálogo de Word/SVG/PNG.
+- **Editor con wrap**: `white-space: pre-wrap` + `overflow-wrap: break-word` en el textarea.
+- **Modo Vista a ancho completo**: `.mode-preview .markdown-body { max-width: none }` (antes tope de 880 px).
+- **Arranque**: la app abre en **modo Vista** por defecto (`mode: 'preview'`) y la ventana por defecto es **915×550**.
+- **Word sin líneas duplicadas**: `buildDocxChildren` avanza el índice hasta el token de cierre en encabezados/párrafos/citas (evita el re-emitido del token `inline`) y localiza el cierre de listas anidadas por profundidad (viñetas correctas).
 

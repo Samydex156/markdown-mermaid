@@ -82,6 +82,14 @@ Historial de las etapas de desarrollo del proyecto, en orden cronológico.
 
 - `docs/`: contexto, cronología, arquitectura, README, prompt y plan de implementación, replicando el estilo de documentación del proyecto base.
 
+## 12. Correcciones y mejoras (post-0.1.0)
+
+- **Doble diálogo al descargar Word**: la interceptación `will-download` + `dialog.showSaveDialog` abría dos veces la ventana de guardado (la de la app y la propia de Electron, por el `setSavePath` asíncrono). Se sustituyó por el IPC `file:save-blob`: el renderer envía el blob (`downloadBlob` → `electronAPI.saveFileWithDialog`) y el main muestra un único `dialog.showSaveDialog` y escribe el archivo. Se eliminó `registerDownloads()`.
+- **Wrap del editor**: el textarea pasó de `white-space: pre` a `pre-wrap` + `overflow-wrap: break-word`; el texto se ajusta al ancho del panel.
+- **Ancho del modo Vista**: se quitó el tope de `max-width: 880px` en modo Vista (`.mode-preview .markdown-body { max-width: none }`); el contenido ocupa todo el ancho de la ventana.
+- **Arranque y ventana**: la app abre por defecto en **modo Vista** (`mode: 'preview'`) y la ventana por defecto es **915×550** (mínima 720×480).
+- **Exportación a Word sin duplicados**: `buildDocxChildren` no avanzaba el índice tras `heading_open`/`paragraph_open`/`blockquote_open`, por lo que el token `inline` se emitía dos veces; además, las listas anidadas se cortaban en el primer cierre. Se corrigió el avance del índice y la búsqueda del cierre por profundidad (viñetas anidadas correctas).
+
 ## Línea de tiempo resumida
 
 | Etapa            | Descripción                                           |
@@ -97,3 +105,4 @@ Historial de las etapas de desarrollo del proyecto, en orden cronológico.
 | 9. Empaquetado   | NSIS + fileAssociations + icono                        |
 | 10. Verificación | Build, preload .mjs, console-message, mermaid, NSIS    |
 | 11. Documentación | docs/ completo                                        |
+| 12. Correcciones | Descargas por IPC, wrap del editor, ancho Vista, arranque en Vista, Word sin duplicados |

@@ -11,7 +11,7 @@ const APP_NAME = 'Markdown Mermaid'
 const api = window.electronAPI
 
 const markdown = ref(DEMO_MARKDOWN)
-const mode = ref('split')
+const mode = ref('preview')
 const generating = ref(false)
 const currentPath = ref(null)
 const fileName = ref('Ejemplo')
@@ -110,7 +110,7 @@ async function downloadWord() {
   try {
     const base = fileName.value.replace(/\.(md|markdown|mdx)$/i, '')
     const blob = await markdownToDocx(markdown.value)
-    downloadBlob(blob, `${base}.docx`)
+    await downloadBlob(blob, `${base}.docx`)
   } catch (error) {
     console.error('No se pudo generar el documento Word:', error)
     alert('No se pudo generar el documento Word')

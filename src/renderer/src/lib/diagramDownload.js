@@ -1,8 +1,19 @@
 /**
  * Creates a download link and triggers the browser download for the given
  * blob, with an auto-generated fallback filename when none is provided.
+ * In the Electron app the blob is sent to the main process, which shows a
+ * single native "save as" dialog and writes the file (avoids the double
+ * dialog that the browser-download route can produce).
  */
-export function downloadBlob(blob, filename) {
+export async function downloadBlob(blob, filename) {
+  if (window.electronAPI?.saveFileWithDialog) {
+    try {
+      const result = await window.electronAPI.saveFileWithDialog(filename, await blob.arrayBuffer())
+      return Boolean(result?.ok)
+    } catch {
+      return false
+    }
+  }
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -11,6 +22,7 @@ export function downloadBlob(blob, filename) {
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return true
 }
 
 /**

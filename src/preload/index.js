@@ -13,6 +13,7 @@ const api = {
   openFile: (path) => ipcRenderer.invoke('file:open', path),
   saveFile: (path, content) => ipcRenderer.invoke('file:save', path, content),
   saveFileAs: (content, suggestedName) => ipcRenderer.invoke('file:save-as', content, suggestedName),
+  saveFileWithDialog: (filename, data) => ipcRenderer.invoke('file:save-blob', filename, data),
   getInitialFile: () => ipcRenderer.invoke('app:get-initial-file'),
   confirm: (message, detail) => ipcRenderer.invoke('dialog:confirm', message, detail),
 

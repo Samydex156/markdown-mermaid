@@ -1,6 +1,6 @@
 # Markdown Mermaid
 
-Aplicación de **escritorio para Windows** (Electron + Vue 3) para abrir, editar y visualizar documentos **Markdown** con soporte nativo para diagramas **Mermaid**. Haz **doble clic** sobre un `.md` en el explorador y edita/renderiza el documento en un **split** (editor + vista), con guardado directo y exportación a **Word (.docx)**.
+Aplicación de **escritorio para Windows** (Electron + Vue 3) para abrir, editar y visualizar documentos **Markdown** con soporte nativo para diagramas **Mermaid**. Haz **doble clic** sobre un `.md` en el explorador y edita/renderiza el documento con modos **Vista** (por defecto), **Split** y **Editor**, con guardado directo y exportación a **Word (.docx)**.
 
 ## Características
 
@@ -43,7 +43,7 @@ npm run icon       # Regenera build/icon.ico y build/icon.png
 
 ### Flujo de trabajo
 
-1. Abre la app: se carga un **documento de ejemplo** con varios tipos de diagramas.
+1. Abre la app: se carga un **documento de ejemplo** con varios tipos de diagramas, en **modo Vista**.
 2. Escribe en el editor (izquierda) o pega tu contenido; la vista previa se actualiza sola.
 3. Para abrir otro archivo: **Ctrl+O**, botón **Abrir**, arrastra un `.md` sobre el editor, o haz **doble clic** en el explorador.
 4. Usa el toggle **Editor / Split / Vista** para cambiar el layout.
@@ -83,7 +83,7 @@ Consulta la [documentación de Mermaid](https://mermaid.js.org/) para la sintaxi
 
 ## Instalación del instalador
 
-El artefacto `dist\Markdown Mermaid Setup 0.1.0.exe` es un instalador NSIS (modo asistido, **por equipo**). Durante la instalación registra la asociación de `.md`, `.markdown` y `.mdx` para que el doble clic abra la aplicación.
+El artefacto `dist\Markdown Mermaid Setup 0.2.0.exe` es un instalador NSIS (modo asistido, **por equipo**). Durante la instalación registra la asociación de `.md`, `.markdown` y `.mdx` para que el doble clic abra la aplicación.
 
 ## Estructura del proyecto
 
