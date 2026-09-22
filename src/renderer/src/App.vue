@@ -6,6 +6,7 @@ import { DEMO_MARKDOWN } from './lib/examples'
 import { initializeMermaid } from './lib/mermaidRenderer'
 import { markdownToDocx } from './lib/markdownToDocx'
 import { downloadBlob } from './lib/diagramDownload'
+import { isSupported as isTtsSupported, getVoices as getTtsVoices, speak as ttsSpeak, stop as ttsStop, pause as ttsPause, resume as ttsResume, setStateListener as setTtsListener } from './lib/tts'
 
 const APP_NAME = 'Markdown Mermaid'
 const api = window.electronAPI
@@ -18,6 +19,14 @@ const fileName = ref('Ejemplo')
 const dirty = ref(false)
 let savedContent = DEMO_MARKDOWN
 
+// TTS Windows (SAPI via Web Speech)
+const ttsVoices = ref([])
+const selectedVoice = ref('')
+const ttsRate = ref(1)
+const ttsState = ref('idle')
+const ttsEngine = ref('web')
+const ttsSupported = isTtsSupported()
+
 function updateTitle() {
   const marker = dirty.value ? ' ●' : ''
   api.setTitle(`${fileName.value}${marker} - ${APP_NAME}`)
@@ -28,8 +37,86 @@ function setEditorDirty(value) {
   api.setDirty(value)
 }
 
+function refreshTtsVoices() {
+  const voices = getTtsVoices()
+  ttsVoices.value = voices
+  if (!selectedVoice.value && voices.length) {
+    const es = voices.find(v => v.lang.toLowerCase().startsWith('es'))
+    selectedVoice.value = es?.voiceURI || voices[0]?.voiceURI || ''
+  }
+}
+
+function getTextToRead() {
+  // si hay selección en el editor, leer solo selección (útil en Windows para escuchar fragmento)
+  const ta = document.querySelector('.editor')
+  if (ta && ta.selectionStart !== ta.selectionEnd) {
+    return ta.value.substring(ta.selectionStart, ta.selectionEnd)
+  }
+  return markdown.value
+}
+
+async function handleTtsToggle() {
+  if (ttsState.value === 'speaking') {
+    if (ttsEngine.value === 'windows' && api.windowsTtsStop) {
+      await api.windowsTtsStop()
+      ttsState.value = 'idle'
+    } else {
+      ttsPause()
+    }
+    return
+  }
+  if (ttsState.value === 'paused') {
+    if (ttsEngine.value === 'windows') {
+      // Windows SAPI no soporta resume nativo; reinicia lectura
+      await handleTtsSpeak()
+    } else {
+      ttsResume()
+    }
+    return
+  }
+  await handleTtsSpeak()
+}
+
+async function handleTtsSpeak() {
+  const text = getTextToRead()
+  if (!text || !text.trim()) return
+  if (ttsEngine.value === 'windows' && api.windowsTtsSpeak) {
+    ttsState.value = 'speaking'
+    try {
+      const voice = ttsVoices.value.find(v => v.voiceURI === selectedVoice.value)
+      const voiceName = voice ? voice.name : undefined
+      const { ok } = await api.windowsTtsSpeak(text, voiceName, ttsRate.value)
+      ttsState.value = 'idle'
+      if (!ok) alert('No se pudo iniciar la lectura Windows (SAPI). Verifique voces instaladas.')
+    } catch (e) {
+      console.error('[tts windows]', e)
+      ttsState.value = 'idle'
+    }
+    return
+  }
+  // Web Speech (SAPI5 en Windows vía Chromium)
+  const voice = ttsVoices.value.find(v => v.voiceURI === selectedVoice.value)
+  ttsSpeak(text, {
+    voiceURI: selectedVoice.value,
+    lang: voice?.lang,
+    rate: ttsRate.value,
+    onEnd: () => { ttsState.value = 'idle' },
+    onError: () => { ttsState.value = 'idle' },
+  })
+}
+
+function handleTtsStop() {
+  if (ttsEngine.value === 'windows' && api.windowsTtsStop) {
+    void api.windowsTtsStop()
+    ttsState.value = 'idle'
+  } else {
+    ttsStop()
+  }
+}
+
 function loadFile(file) {
   if (!file) return
+  handleTtsStop()
   savedContent = file.content
   markdown.value = file.content
   currentPath.value = file.path
@@ -45,6 +132,7 @@ async function confirmDiscard() {
 
 async function newDocument() {
   if (!(await confirmDiscard())) return
+  handleTtsStop()
   savedContent = ''
   markdown.value = ''
   currentPath.value = null
@@ -55,6 +143,7 @@ async function newDocument() {
 
 async function restoreExample() {
   if (!(await confirmDiscard())) return
+  handleTtsStop()
   savedContent = DEMO_MARKDOWN
   markdown.value = DEMO_MARKDOWN
   currentPath.value = null
@@ -146,6 +235,11 @@ const menuActions = { new: newDocument, open: openDialog, save, 'save-as': saveA
 function onKeydown(event) {
   if (!(event.ctrlKey || event.metaKey)) return
   const key = event.key.toLowerCase()
+  if (key === 'l' && event.shiftKey) {
+    event.preventDefault()
+    if (ttsSupported) void handleTtsToggle()
+    return
+  }
   if (key === 's' && event.shiftKey) {
     event.preventDefault()
     void saveAs()
@@ -164,6 +258,20 @@ function onKeydown(event) {
 onMounted(() => {
   initializeMermaid()
   window.addEventListener('keydown', onKeydown)
+  // TTS setup (Windows SAPI voces)
+  if (ttsSupported) {
+    setTtsListener((s) => { ttsState.value = s })
+    refreshTtsVoices()
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = refreshTtsVoices
+      // fallback si voces aún no cargadas
+      setTimeout(refreshTtsVoices, 500)
+    }
+    // cargar voces Windows SAPI adicionales si engine windows
+    if (api.windowsTtsVoices) {
+      void api.windowsTtsVoices().then(() => refreshTtsVoices())
+    }
+  }
   unsubscribers.push(api.onOpenRequested((path) => void openRequested(path)))
   unsubscribers.push(api.onFileChanged(onFileChanged))
   for (const [action, handler] of Object.entries(menuActions)) {
@@ -176,6 +284,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  handleTtsStop()
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = null
+  }
   unsubscribers.forEach((unsub) => unsub())
 })
 
@@ -214,6 +326,33 @@ watch(markdown, (val) => {
             {{ m === 'editor' ? 'Editor' : m === 'split' ? 'Split' : 'Vista' }}
           </button>
         </div>
+      </div>
+      <!-- Barra TTS Windows (SAPI) -->
+      <div v-if="ttsSupported" class="toolbar-tts">
+        <span class="tts-label">Lectura:</span>
+        <button
+          class="btn btn-tts"
+          :class="{ active: ttsState === 'speaking' }"
+          :title="ttsState === 'speaking' ? 'Pausar (Ctrl+Shift+L)' : ttsState === 'paused' ? 'Reanudar (Ctrl+Shift+L)' : 'Leer en voz alta (Ctrl+Shift+L)'"
+          @click="handleTtsToggle"
+        >
+          <span v-if="ttsState === 'speaking'">⏸ Pausar</span>
+          <span v-else-if="ttsState === 'paused'">▶ Reanudar</span>
+          <span v-else>▶ Leer</span>
+        </button>
+        <button class="btn btn-tts" :disabled="ttsState === 'idle'" title="Detener lectura" @click="handleTtsStop">⏹ Detener</button>
+        <select v-model="selectedVoice" class="tts-select" title="Voz">
+          <option v-for="v in ttsVoices" :key="v.voiceURI" :value="v.voiceURI">{{ v.name }} ({{ v.lang }})</option>
+        </select>
+        <label class="tts-rate-label" title="Velocidad">Vel:
+          <input v-model.number="ttsRate" type="range" min="0.5" max="2" step="0.1" class="tts-rate" />
+          <span class="tts-rate-val">{{ ttsRate.toFixed(1) }}x</span>
+        </label>
+        <select v-model="ttsEngine" class="tts-select tts-engine" title="Motor">
+          <option value="web">Web (SAPI)</option>
+          <option value="windows">Windows SAPI</option>
+        </select>
+        <span v-if="ttsState !== 'idle'" class="tts-status">{{ ttsState === 'speaking' ? '🔊 Reproduciendo' : '⏸ Pausado' }}</span>
       </div>
     </header>
 
@@ -345,6 +484,59 @@ watch(markdown, (val) => {
 .seg-btn.active {
   background: var(--accent);
   color: #fff;
+}
+
+.toolbar-tts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  width: 100%;
+}
+.tts-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+.btn-tts.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.tts-select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text-h);
+  font-size: 13px;
+  max-width: 220px;
+}
+.tts-engine {
+  max-width: 130px;
+}
+.tts-rate-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+.tts-rate {
+  width: 90px;
+}
+.tts-rate-val {
+  min-width: 32px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.tts-status {
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .layout {

@@ -16,6 +16,9 @@ const api = {
   saveFileWithDialog: (filename, data) => ipcRenderer.invoke('file:save-blob', filename, data),
   getInitialFile: () => ipcRenderer.invoke('app:get-initial-file'),
   confirm: (message, detail) => ipcRenderer.invoke('dialog:confirm', message, detail),
+  windowsTtsSpeak: (text, voiceName, rate) => ipcRenderer.invoke('tts:windows-speak', text, voiceName, rate),
+  windowsTtsStop: () => ipcRenderer.invoke('tts:windows-stop'),
+  windowsTtsVoices: () => ipcRenderer.invoke('tts:windows-voices'),
 
   setTitle: (title) => ipcRenderer.send('app:set-title', title),
   setDirty: (dirty) => ipcRenderer.send('app:set-dirty', Boolean(dirty)),

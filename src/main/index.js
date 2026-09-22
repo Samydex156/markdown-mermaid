@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { watch } from 'node:fs'
+import * as cp from 'node:child_process'
 import { basename, dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -24,7 +25,7 @@ function filePathFromArgv(argv = process.argv) {
 
 function getState(win) {
   if (!windowState.has(win)) {
-    windowState.set(win, { isDirty: false, closeAfterSave: false, watcher: null, lastSavedAt: 0 })
+    windowState.set(win, { isDirty: false, closeAfterSave: false, watcher: null, lastSavedAt: 0, ttsProcess: null })
   }
   return windowState.get(win)
 }
@@ -64,6 +65,9 @@ function createWindow(initialFile) {
     const state = windowState.get(win)
     if (state?.watcher) {
       try { state.watcher.close() } catch {}
+    }
+    if (state?.ttsProcess) {
+      try { state.ttsProcess.kill() } catch {}
     }
     windowState.delete(win)
     windows.delete(win)
@@ -161,6 +165,51 @@ async function openMarkdownFile(filePath) {
   } catch {
     dialog.showErrorBox(APP_NAME, `No se pudo leer el archivo:\n${filePath}`)
     return null
+  }
+}
+
+// ---- TTS Windows SAPI via PowerShell (solo Windows) ----
+function killTtsProcess(win) {
+  const state = win ? windowState.get(win) : null
+  const proc = state?.ttsProcess
+  if (proc) {
+    try { proc.kill() } catch {}
+    state.ttsProcess = null
+  }
+}
+
+function escapePsText(text) {
+  // PowerShell single-quoted string: '' escapes '
+  return String(text).replace(/'/g, "''")
+}
+
+function windowsTtsSpeak(win, text, voiceName, rate) {
+  if (process.platform !== 'win32') return false
+  killTtsProcess(win)
+  const state = getState(win)
+  const clean = String(text).replace(/\r?\n/g, ' ').trim()
+  if (!clean) return false
+  const escaped = escapePsText(clean)
+  const sapiRate = Math.max(-10, Math.min(10, Math.round(((Number(rate) || 1) - 1) * 10)))
+  // construir script PowerShell
+  let psScript = 'Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer; '
+  if (voiceName) {
+    const vEsc = escapePsText(voiceName)
+    psScript += `try { $s.SelectVoice('${vEsc}') } catch {} ; `
+  }
+  psScript += `$s.Rate=${sapiRate}; $s.Speak('${escaped}'); `
+  try {
+    const proc = cp.spawn('powershell.exe', ['-NoProfile', '-Command', psScript], { windowsHide: true })
+    state.ttsProcess = proc
+    proc.on('close', () => {
+      if (state.ttsProcess === proc) state.ttsProcess = null
+    })
+    proc.on('error', () => {
+      if (state.ttsProcess === proc) state.ttsProcess = null
+    })
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -275,6 +324,31 @@ function registerIpc() {
       detail,
     })
     return result.response === 0
+  })
+
+  // TTS Windows SAPI
+  ipcMain.handle('tts:windows-speak', async (event, text, voiceName, rate) => {
+    const win = getWinFromEvent(event)
+    if (!win) return { ok: false }
+    const ok = windowsTtsSpeak(win, text, voiceName, rate)
+    return { ok }
+  })
+  ipcMain.handle('tts:windows-stop', async (event) => {
+    const win = getWinFromEvent(event)
+    if (win) killTtsProcess(win)
+    return { ok: true }
+  })
+  ipcMain.handle('tts:windows-voices', async () => {
+    if (process.platform !== 'win32') return [];
+    return await new Promise((resolve) => {
+      const ps = `Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }`;
+      const proc = cp.spawn('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true })
+      let out = '';
+      proc.stdout.on('data', (d) => out += d);
+      proc.on('close', () => resolve(out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)));
+      proc.on('error', () => resolve([]));
+      setTimeout(() => resolve([]), 4e3);
+    });
   })
 }
 
