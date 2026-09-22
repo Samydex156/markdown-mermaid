@@ -4,7 +4,7 @@ import { ref } from 'vue'
 const props = defineProps({
   modelValue: { type: String, default: '' },
 })
-const emit = defineEmits(['update:modelValue', 'loaded'])
+const emit = defineEmits(['update:modelValue', 'loaded', 'dirty'])
 
 let debounceTimer
 
@@ -14,6 +14,8 @@ function isMarkdownPath(path) {
 
 function onInput(event) {
   const value = event.target.value
+  // marca dirty de inmediato para habilitar Guardar sin esperar debounce
+  emit('dirty')
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
     emit('update:modelValue', value)

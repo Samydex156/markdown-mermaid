@@ -16,6 +16,7 @@ const generating = ref(false)
 const currentPath = ref(null)
 const fileName = ref('Ejemplo')
 const dirty = ref(false)
+let savedContent = DEMO_MARKDOWN
 
 function updateTitle() {
   const marker = dirty.value ? ' ●' : ''
@@ -29,6 +30,7 @@ function setEditorDirty(value) {
 
 function loadFile(file) {
   if (!file) return
+  savedContent = file.content
   markdown.value = file.content
   currentPath.value = file.path
   fileName.value = file.name
@@ -43,6 +45,7 @@ async function confirmDiscard() {
 
 async function newDocument() {
   if (!(await confirmDiscard())) return
+  savedContent = ''
   markdown.value = ''
   currentPath.value = null
   fileName.value = 'Sin título'
@@ -52,6 +55,7 @@ async function newDocument() {
 
 async function restoreExample() {
   if (!(await confirmDiscard())) return
+  savedContent = DEMO_MARKDOWN
   markdown.value = DEMO_MARKDOWN
   currentPath.value = null
   fileName.value = 'Ejemplo'
@@ -76,7 +80,10 @@ async function save() {
     if (currentPath.value) {
       const result = await api.saveFile(currentPath.value, markdown.value)
       api.notifySaveResult({ ok: result.ok })
-      if (result.ok) setEditorDirty(false)
+      if (result.ok) {
+        savedContent = markdown.value
+        setEditorDirty(false)
+      }
     } else {
       await saveAs()
     }
@@ -93,6 +100,7 @@ async function saveAs() {
     const result = await api.saveFileAs(markdown.value, suggested)
     api.notifySaveResult({ ok: result.ok })
     if (result.ok) {
+      savedContent = markdown.value
       currentPath.value = result.path
       fileName.value = result.path.split(/[\\/]/).pop()
       setEditorDirty(false)
@@ -172,6 +180,11 @@ onUnmounted(() => {
 })
 
 watch([fileName, dirty], updateTitle)
+watch(markdown, (val) => {
+  const shouldBeDirty = val !== savedContent
+  if (shouldBeDirty !== dirty.value) setEditorDirty(shouldBeDirty)
+})
+
 </script>
 
 <template>
@@ -206,7 +219,7 @@ watch([fileName, dirty], updateTitle)
 
     <main class="layout" :class="`mode-${mode}`">
       <section v-show="mode === 'editor' || mode === 'split'" class="panel panel-editor">
-        <MarkdownInput v-model="markdown" @loaded="loadFile" />
+        <MarkdownInput v-model="markdown" @loaded="loadFile" @dirty="() => { if (!dirty) setEditorDirty(true) }" />
       </section>
       <section v-show="mode === 'preview' || mode === 'split'" class="panel panel-preview">
         <MarkdownViewer :source="markdown" />

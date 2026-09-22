@@ -12,11 +12,8 @@ const MD_FILTERS = [
   { name: 'Todos los archivos', extensions: ['*'] },
 ]
 
-let win = null
-let isDirty = false
-let closeAfterSave = false
-let watcher = null
-let lastSavedAt = 0
+const windows = new Set()
+const windowState = new WeakMap()
 
 function filePathFromArgv(argv = process.argv) {
   for (const arg of argv) {
@@ -25,8 +22,24 @@ function filePathFromArgv(argv = process.argv) {
   return null
 }
 
-function createWindow() {
-  win = new BrowserWindow({
+function getState(win) {
+  if (!windowState.has(win)) {
+    windowState.set(win, { isDirty: false, closeAfterSave: false, watcher: null, lastSavedAt: 0 })
+  }
+  return windowState.get(win)
+}
+
+function getWinFromEvent(event) {
+  try {
+    const wc = event.sender
+    const w = BrowserWindow.fromWebContents(wc)
+    if (w && !w.isDestroyed()) return w
+  } catch {}
+  return BrowserWindow.getFocusedWindow() || [...windows].find((w) => !w.isDestroyed()) || null
+}
+
+function createWindow(initialFile) {
+  const win = new BrowserWindow({
     width: 915,
     height: 550,
     minWidth: 720,
@@ -42,12 +55,20 @@ function createWindow() {
     },
   })
 
+  windows.add(win)
+  getState(win)
+
   win.once('ready-to-show', () => win.show())
   win.on('page-title-updated', (event) => event.preventDefault())
   win.on('closed', () => {
-    win = null
+    const state = windowState.get(win)
+    if (state?.watcher) {
+      try { state.watcher.close() } catch {}
+    }
+    windowState.delete(win)
+    windows.delete(win)
   })
-  win.on('close', onWindowClose)
+  win.on('close', (event) => onWindowClose(event, win))
 
   win.webContents.on('console-message', (event) => {
     const { message, level, lineNumber, sourceId } = event
@@ -58,12 +79,13 @@ function createWindow() {
   })
   win.webContents.once('did-finish-load', () => {
     console.log('[main] renderer cargado')
+    if (initialFile) {
+      win.webContents.send('file:open-requested', initialFile)
+    }
   })
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https:') || url.startsWith('http:')) {
-      // External links open in the system browser.
-      // (opening is handled lazily in the renderer; keep default blocked)
     }
     return { action: 'deny' }
   })
@@ -73,39 +95,46 @@ function createWindow() {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  return win
 }
 
-function watchFile(path) {
-  unwatchFile()
+function watchFile(path, win) {
+  const state = getState(win)
+  unwatchFile(win)
   if (!path) return
   const dir = dirname(path)
   const base = basename(path)
   try {
-    watcher = watch(dir, (eventType, filename) => {
+    state.watcher = watch(dir, (eventType, filename) => {
       if (typeof filename !== 'string') return
       if (basename(filename) !== base) return
-      if (Date.now() - lastSavedAt < 800) return
-      win?.webContents.send('file:changed', { path, eventType })
+      if (Date.now() - state.lastSavedAt < 800) return
+      if (win.isDestroyed()) return
+      win.webContents.send('file:changed', { path, eventType })
     })
   } catch {
-    watcher = null
+    state.watcher = null
   }
 }
 
-function unwatchFile() {
-  if (watcher) {
-    watcher.close()
-    watcher = null
+function unwatchFile(win) {
+  const state = getState(win)
+  if (state.watcher) {
+    try { state.watcher.close() } catch {}
+    state.watcher = null
   }
 }
 
-function setWatchTarget(path) {
-  lastSavedAt = Date.now()
-  watchFile(path)
+function setWatchTarget(path, win) {
+  const state = getState(win)
+  state.lastSavedAt = Date.now()
+  watchFile(path, win)
 }
 
-function onWindowClose(event) {
-  if (!isDirty || !win) return
+function onWindowClose(event, win) {
+  const state = getState(win)
+  if (!state.isDirty || !win) return
   event.preventDefault()
   const choice = dialog.showMessageBoxSync(win, {
     type: 'warning',
@@ -116,11 +145,11 @@ function onWindowClose(event) {
     detail: '¿Qué deseas hacer con el documento abierto?',
   })
   if (choice === 0) {
-    closeAfterSave = true
+    state.closeAfterSave = true
     win.webContents.send('menu:save')
   } else if (choice === 1) {
-    isDirty = false
-    win.close()
+    state.isDirty = false
+    win.destroy()
   }
 }
 
@@ -136,7 +165,8 @@ async function openMarkdownFile(filePath) {
 }
 
 function registerIpc() {
-  ipcMain.handle('dialog:open-file', async () => {
+  ipcMain.handle('dialog:open-file', async (event) => {
+    const win = getWinFromEvent(event)
     const result = await dialog.showOpenDialog(win, {
       title: 'Abrir archivo Markdown',
       properties: ['openFile'],
@@ -144,23 +174,26 @@ function registerIpc() {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     const file = await openMarkdownFile(result.filePaths[0])
-    if (file) setWatchTarget(file.path)
+    if (file && win) setWatchTarget(file.path, win)
     return file
   })
 
-  ipcMain.handle('file:open', async (_event, filePath) => {
+  ipcMain.handle('file:open', async (event, filePath) => {
+    const win = getWinFromEvent(event)
     const file = await openMarkdownFile(filePath)
-    if (file) setWatchTarget(file.path)
+    if (file && win) setWatchTarget(file.path, win)
     return file
   })
 
-  ipcMain.handle('file:save', async (_event, filePath, content) => {
+  ipcMain.handle('file:save', async (event, filePath, content) => {
+    const win = getWinFromEvent(event)
     await writeFile(filePath, content, 'utf-8')
-    lastSavedAt = Date.now()
+    if (win) getState(win).lastSavedAt = Date.now()
     return { ok: true, path: filePath }
   })
 
-  ipcMain.handle('file:save-as', async (_event, content, suggestedName = 'documento.md') => {
+  ipcMain.handle('file:save-as', async (event, content, suggestedName = 'documento.md') => {
+    const win = getWinFromEvent(event)
     const result = await dialog.showSaveDialog(win, {
       title: 'Guardar como',
       defaultPath: suggestedName,
@@ -168,12 +201,15 @@ function registerIpc() {
     })
     if (result.canceled || !result.filePath) return { ok: false, canceled: true, path: null }
     await writeFile(result.filePath, content, 'utf-8')
-    lastSavedAt = Date.now()
-    setWatchTarget(result.filePath)
+    if (win) {
+      getState(win).lastSavedAt = Date.now()
+      setWatchTarget(result.filePath, win)
+    }
     return { ok: true, canceled: false, path: result.filePath }
   })
 
-  ipcMain.handle('file:save-blob', async (_event, filename, data) => {
+  ipcMain.handle('file:save-blob', async (event, filename, data) => {
+    const win = getWinFromEvent(event)
     const ext = extname(filename).replace('.', '')
     const filters = ext
       ? [{ name: 'Documento', extensions: [ext] }]
@@ -188,34 +224,48 @@ function registerIpc() {
     return { ok: true, canceled: false, path: result.filePath }
   })
 
-  ipcMain.on('app:set-watch', (_event, path) => setWatchTarget(path || null))
+  ipcMain.on('app:set-watch', (event, path) => {
+    const win = getWinFromEvent(event)
+    if (win) setWatchTarget(path || null, win)
+  })
 
-  ipcMain.handle('app:get-initial-file', () => filePathFromArgv(process.argv))
+  ipcMain.handle('app:get-initial-file', (event) => {
+    // For the first window the argv is authoritative; for subsequent windows
+    // the file is injected via createWindow(initialFile) -> file:open-requested
+    return filePathFromArgv(process.argv)
+  })
 
-  ipcMain.on('app:set-title', (_event, title) => {
+  ipcMain.on('app:set-title', (event, title) => {
+    const win = getWinFromEvent(event)
     if (win) win.setTitle(title)
   })
 
-  ipcMain.on('app:set-dirty', (_event, dirty) => {
-    isDirty = Boolean(dirty)
+  ipcMain.on('app:set-dirty', (event, dirty) => {
+    const win = getWinFromEvent(event)
+    if (win) getState(win).isDirty = Boolean(dirty)
   })
 
-  ipcMain.on('app:save-result', (_event, payload = {}) => {
+  ipcMain.on('app:save-result', (event, payload = {}) => {
+    const win = getWinFromEvent(event)
+    if (!win) return
+    const state = getState(win)
     const { ok } = payload
-    if (closeAfterSave) {
-      closeAfterSave = false
+    if (state.closeAfterSave) {
+      state.closeAfterSave = false
       if (ok) {
-        isDirty = false
-        win?.close()
+        state.isDirty = false
+        win.close()
       }
     }
   })
 
-  ipcMain.on('app:close-window', () => {
+  ipcMain.on('app:close-window', (event) => {
+    const win = getWinFromEvent(event)
     if (win) win.close()
   })
 
-  ipcMain.handle('dialog:confirm', async (_event, message, detail) => {
+  ipcMain.handle('dialog:confirm', async (event, message, detail) => {
+    const win = getWinFromEvent(event)
     const result = await dialog.showMessageBox(win, {
       type: 'question',
       buttons: ['Aceptar', 'Cancelar'],
@@ -229,6 +279,7 @@ function registerIpc() {
 }
 
 function sendMenu(action) {
+  const win = BrowserWindow.getFocusedWindow() || [...windows].find((w) => !w.isDestroyed())
   if (win) win.webContents.send('menu:' + action)
 }
 
@@ -277,16 +328,15 @@ if (!gotLock) {
 } else {
   app.on('second-instance', (_event, argv) => {
     const file = filePathFromArgv(argv)
-    if (!win) return
-    if (win.isMinimized()) win.restore()
-    win.focus()
-    if (file) win.webContents.send('file:open-requested', file)
+    // Nuevo requerimiento: cada archivo en ventana distinta
+    createWindow(file || null)
   })
 
   app.whenReady().then(() => {
     registerIpc()
     buildMenu()
-    createWindow()
+    const initialFile = filePathFromArgv(process.argv)
+    createWindow(initialFile || null)
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -294,7 +344,10 @@ if (!gotLock) {
   })
 
   app.on('window-all-closed', () => {
-    unwatchFile()
+    for (const w of [...windows]) {
+      const state = windowState.get(w)
+      if (state?.watcher) try { state.watcher.close() } catch {}
+    }
     if (process.platform !== 'darwin') app.quit()
   })
 }
