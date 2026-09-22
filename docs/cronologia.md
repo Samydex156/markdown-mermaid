@@ -24,7 +24,7 @@ Historial de las etapas de desarrollo del proyecto, en orden cronológico.
 - Se decidió el stack de escritorio: **Electron + electron-vite + electron-builder** (verificado contra npm en 2026: Electron 43, electron-vite 5, electron-builder 26).
 - Decisiones de producto consultadas al usuario:
   - Nombre de producto: **Markdown Mermaid**.
-  - Comportamiento multiarchivo: **instancia única, reemplazar el archivo actual** (con confirmación si hay cambios sin guardar).
+  - Comportamiento multiarchivo inicial: **instancia única, reemplazar el archivo actual** (con confirmación si hay cambios sin guardar) — luego evolucionó a multi-ventana.
   - Icono: **placeholder generado por script** (reemplazable).
 - Se escribió el plan en `docs/plan-implementacion.md`.
 
@@ -46,7 +46,7 @@ Historial de las etapas de desarrollo del proyecto, en orden cronológico.
 ## 6. Proceso principal (`src/main/index.js`)
 
 - `BrowserWindow` seguro: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: false`, preload.
-- Instancia única (`app.requestSingleInstanceLock`) + evento `second-instance` para reenviar la ruta `.md` a la ventana abierta.
+- Instancia única inicial (`app.requestSingleInstanceLock`) + evento `second-instance` para reenviar la ruta `.md` a la ventana abierta.
 - Parseo de `argv` para abrir un archivo al arrancar (doble clic).
 - IPC: `dialog:open-file`, `file:open`, `file:save`, `file:save-as`, `app:get-initial-file`, `app:set-title`, `app:set-dirty`, `app:set-watch`, `app:save-result`, `app:close-window`, `dialog:confirm`.
 - **Watcher** `fs.watch` del archivo abierto → evento `file:changed` (ignora los cambios del propio guardado).
@@ -84,11 +84,24 @@ Historial de las etapas de desarrollo del proyecto, en orden cronológico.
 
 ## 12. Correcciones y mejoras (post-0.1.0)
 
-- **Doble diálogo al descargar Word**: la interceptación `will-download` + `dialog.showSaveDialog` abría dos veces la ventana de guardado (la de la app y la propia de Electron, por el `setSavePath` asíncrono). Se sustituyó por el IPC `file:save-blob`: el renderer envía el blob (`downloadBlob` → `electronAPI.saveFileWithDialog`) y el main muestra un único `dialog.showSaveDialog` y escribe el archivo. Se eliminó `registerDownloads()`.
+- **Doble diálogo al descargar Word**: la interceptación `will-download` + `dialog.showSaveDialog` abría dos veces la ventana de guardado. Se sustituyó por el IPC `file:save-blob`: el renderer envía el blob (`downloadBlob` → `electronAPI.saveFileWithDialog`) y el main muestra un único `dialog.showSaveDialog` y escribe el archivo. Se eliminó `registerDownloads()`.
 - **Wrap del editor**: el textarea pasó de `white-space: pre` a `pre-wrap` + `overflow-wrap: break-word`; el texto se ajusta al ancho del panel.
 - **Ancho del modo Vista**: se quitó el tope de `max-width: 880px` en modo Vista (`.mode-preview .markdown-body { max-width: none }`); el contenido ocupa todo el ancho de la ventana.
 - **Arranque y ventana**: la app abre por defecto en **modo Vista** (`mode: 'preview'`) y la ventana por defecto es **915×550** (mínima 720×480).
 - **Exportación a Word sin duplicados**: `buildDocxChildren` no avanzaba el índice tras `heading_open`/`paragraph_open`/`blockquote_open`, por lo que el token `inline` se emitía dos veces; además, las listas anidadas se cortaban en el primer cierre. Se corrigió el avance del índice y la búsqueda del cierre por profundidad (viñetas anidadas correctas).
+
+## 13. Guardado y multi-ventana (0.2.0)
+
+- **Botón Guardar deshabilitado**: `dirty` nunca se ponía en `true` (faltaba `watch(markdown)`). Se añadió `let savedContent` en `App.vue`, `watch(markdown, val !== savedContent → setEditorDirty)`, actualización de `savedContent` en `loadFile/newDocument/restoreExample/save/saveAs`, y evento `dirty` inmediato desde `MarkdownInput.vue` (`emit('dirty')` en `onInput`) para habilitar Guardar al primer keystroke sin esperar debounce.
+- **Multi-ventana**: se refactorizó `src/main/index.js` de singleton `win/isDirty/watcher` a `Set<BrowserWindow>` + `WeakMap<win,{isDirty,watcher,lastSavedAt,ttsProcess}>` con helpers `getState/getWinFromEvent/watchFile(path,win)/setWatchTarget(path,win)/onWindowClose(event,win)`. `createWindow(initialFile)` crea ventana independiente y `second-instance` ahora hace `createWindow(file||null)` (cada `.md` en ventana nueva) con `did-finish-load → file:open-requested`. IPC usa `getWinFromEvent(event)` y `sendMenu` envía a `getFocusedWindow()`. `npm run build:win` actualizado a `0.2.0` (101 MB).
+
+## 14. Lector TTS Windows (0.2.0)
+
+- **lib/tts.js** (`src/renderer/src/lib/tts.js`): `stripMarkdown` (elimina fences mermaid, code, links, tablas, html), `chunkText(2500)` para SAPI, `getVoices/getSpanishVoices`, `speak(text,{voiceURI,rate})` encadenando `SpeechSynthesisUtterance` por chunks con `onend` al siguiente, `pause/resume/stop`, `setStateListener`. Solo Web Speech (SAPI5 en Windows) sin archivos temporales.
+- **Main SAPI fallback** (`src/main/index.js`): `import * as cp from 'node:child_process'`, `ttsProcess` por ventana, `escapePsText`, `windowsTtsSpeak(win,text,voiceName,rate)` con `cp.spawn('powershell.exe','Add-Type System.Speech; $s.SelectVoice; $s.Rate; $s.Speak')`, `sapiRate = ((rate-1)*10)` (-10..10), `killTtsProcess` en `closed/loadFile`; IPC `tts:windows-speak/stop/voices` y `tts:windows-voices` vía PowerShell `GetInstalledVoices`.
+- **Preload** (`src/preload/index.js`): expone `windowsTtsSpeak/windowsTtsStop/windowsTtsVoices` en `window.electronAPI`.
+- **App.vue**: barra `toolbar-tts` con `▶ Leer/⏸ Pausar/▶ Reanudar/⏹ Detener`, selector de voz, slider velocidad `0.5-2x`, selector motor `web/windows`, estado `speaking/paused`, `Ctrl+Shift+L`, lectura de selección (`textarea.selection`) o doc completo, `handleTtsStop` en `loadFile/newDocument/restoreExample/onUnmounted`. Solo streaming en memoria.
+- **Build**: `out/main 13.20kB preload 2.07kB`, `npm run dev` verificado `[main] renderer cargado` y `npm run build:win` genera `Markdown Mermaid Setup 0.2.0.exe`.
 
 ## Línea de tiempo resumida
 
@@ -106,3 +119,5 @@ Historial de las etapas de desarrollo del proyecto, en orden cronológico.
 | 10. Verificación | Build, preload .mjs, console-message, mermaid, NSIS    |
 | 11. Documentación | docs/ completo                                        |
 | 12. Correcciones | Descargas por IPC, wrap del editor, ancho Vista, arranque en Vista, Word sin duplicados |
+| 13. Guardado/multi-ventana | savedContent + watch + dirty inmediato, multi-ventana Set/WeakMap |
+| 14. TTS Windows  | Web Speech + SAPI PowerShell, barra Lectura, voces SAPI |
